@@ -1,0 +1,1 @@
+Venue managers harvest ripe ingredients from your farms before buying from vendors, then automatically replant. Harvests go to venue storage, with overflow sent to your inventory. Adds zero-cost farm-supply entries to the finance panel. Requires BepInEx 6.

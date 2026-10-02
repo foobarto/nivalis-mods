@@ -1,0 +1,36 @@
+Description
+Farm First Manager Supply lets venue managers use ripe ingredients from player-owned farms before buying from vendors. Harvested units are automatically replanted with the same crop.
+
+Installation instructions
+1. Close Nivalis Nights and back up your saves.
+2. Install BepInEx 6 for Unity IL2CPP, Windows x64, then launch the game once to generate its interop bindings.
+3. Extract the mod archive into the game folder. The DLL should be at BepInEx/plugins/NivalisFarmSupply/NivalisFarmSupply.dll.
+4. Restart the game. The mod is enabled by default.
+5. On Steam Deck or Linux with Proton, enable the native winhttp override for BepInEx. The Steam launch option is: WINEDLLOVERRIDES="winhttp=n,b" %command%.
+
+Main features
+- Supplies managers from ripe crops in player-owned farms before normal vendor purchasing.
+- Automatically replants each harvested unit using one real planting item, including crops whose produce also serves as their seed.
+- Logs unexpected harvest counts and attempts a verified replant without disabling other farms. The affected unit is skipped until reload, its produce stays in player inventory, and vendors cover the current shortage.
+- Sends the full harvest to venue storage; only overflow goes to your inventory.
+- Accounts for current stock and pending deliveries.
+- Keeps normal vendor purchasing available for remaining shortages.
+- Adds separate zero-cost farm-supply entries to venue finance details, including the actual quantity delivered.
+- Preserves the existing finance statistics and total calculations. Their ingredient expenses remain recipe market-price estimates.
+- Stores farm-supply history alongside the mod, matched to the exact game save. Existing game save formats are unchanged.
+- Preserves native yield, freshness, farming experience and growth rules.
+- Attempts best-effort loading after game updates, checking regenerated bindings before installing hooks. Initialization or API compatibility failures deactivate the mod. Ambiguous inventory mutations pause farm sourcing while normal vendor purchasing and completed delivery reporting continue.
+
+Requirements
+- Nivalis Nights. Verified Steam builds: 25653325 and 25673567; later builds use best-effort compatibility.
+- BepInEx 6 IL2CPP x64, be.788 or newer.
+- A managed player-owned venue and ripe farm ingredients it needs.
+- Player inventory room for the temporary harvest and returned seeds. The mod reserves the full yield, up to two seeds and two free stack slots before harvesting.
+- No Farming Animations is optional.
+
+Configuration is generated at BepInEx/config/cheeze.nivalis.farmsupply.cfg. Supply.Enabled controls automatic farm supply, Receipts.ShowFarmSupply controls the new finance entries, Debug.Verbose enables diagnostic logging, and Compatibility.BestEffortAfterUpdates controls attempts on unverified builds (enabled by default). Restart after configuration changes.
+
+Farm-supply entries begin with deliveries recorded by this version; earlier harvests are not reconstructed. Keep BepInEx/config/cheeze.nivalis.farmsupply/receipts/ when moving your saves to another installation. Setting Compatibility.BestEffortAfterUpdates to false restricts loading to verified binaries. BepInEx must support the installed game version. Best-effort checks cannot guarantee compatibility with changed native behavior or recover from native crashes.
+
+Shout outs
+Thanks to the BepInEx, Il2CppInterop and HarmonyX teams, and the Nivalis modding community.

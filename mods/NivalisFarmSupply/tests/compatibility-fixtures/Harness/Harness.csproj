@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../CompatibilityFixtureRegression.cs" Link="CompatibilityFixtureRegression.cs" />
+    <Compile Include="../../../../../shared/managed/ManagedApiCompatibility.cs" Link="ManagedApiCompatibility.cs" />
+    <ProjectReference Include="../Adapter/Adapter.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../MissingBinding/MissingBinding.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Target Name="CopyFixtureAssemblies" AfterTargets="Build">
+    <Copy SourceFiles="../Adapter/bin/$(Configuration)/net10.0/CompatibilityFixtureAdapter.dll" DestinationFolder="$(OutDir)compatibility-fixtures/adapter" />
+    <Copy SourceFiles="../PresentBinding/bin/$(Configuration)/net10.0/CompatibilityFixtureBinding.dll" DestinationFolder="$(OutDir)compatibility-fixtures/present" />
+    <Copy SourceFiles="../MissingBinding/bin/$(Configuration)/net10.0/CompatibilityFixtureBinding.dll" DestinationFolder="$(OutDir)compatibility-fixtures/missing" />
+  </Target>
+</Project>
