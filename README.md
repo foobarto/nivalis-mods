@@ -51,6 +51,13 @@ missing API members, replant recovery, and shared produce/planting identities.
 Plugin compilation and passing checks are separate from live gameplay and
 save/reload verification.
 
+## Releases
+
+Mods are versioned independently. Tags use `<mod-name>-v<version>`, for example
+`farm-first-manager-supply-v0.2.2`. Release titles include the mod name and version,
+and each release contains only that mod's install package. There is no collection-wide
+version. Shared-helper changes are tested and released with each affected mod.
+
 ## Layout
 
 - `mods/`: each mod's source, documentation, and checks.

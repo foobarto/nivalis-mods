@@ -25,3 +25,6 @@ compatibility unless an explicit migration is included.
 - Preserve vendor fallback, inventory capacity checks, and same-crop replanting.
   Review substantial changes independently for ownership, compatibility, regressions,
   and test gaps before publishing.
+- Version and release each mod independently. Use `<mod-name>-v<version>` tags,
+  release titles containing the mod name and version, and packages for that mod
+  only. Shared-helper changes require checks for each affected mod.
