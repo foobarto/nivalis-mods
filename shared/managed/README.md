@@ -43,3 +43,8 @@ Count mismatches are local outcomes; ownership corruption is rejected.
 
 First adapter: `mods/NivalisFarmSupply/Plugin.cs`. Checks live in that mod's
 `tests` project and include partial mutation and restoration failure cases.
+
+`RelativeAttachmentStore.cs` validates bounded object identities and relative poses
+for moving-object decorations. Snapshot restore is transactional; malformed,
+duplicate, nonfinite and oversized data is rejected. Boat Decor uses this with
+exact-save snapshots; its tests cover both helpers.

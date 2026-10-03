@@ -4,6 +4,7 @@ Mods for **Nivalis Nights**, maintained by [foobarto](https://github.com/foobart
 
 | Mod | Purpose | Version |
 | --- | --- | --- |
+| [Boat Decor](mods/NivalisBoatDecor) | Decorate the docked player boat with owned furniture and native placement, pickup and storage controls. | 0.1.3 |
 | [Farm First Manager Supply](mods/NivalisFarmSupply) | Managers harvest ripe crops from player-owned farms before buying ingredients, then replant. | 0.2.2 |
 
 Farm First Manager Supply is also published on
@@ -64,7 +65,8 @@ version. Shared-helper changes are tested and released with each affected mod.
 - `shared/managed/`: reusable C# helpers linked into individual mods.
 
 For behavior, configuration, compatibility, and validation limits, read the
-[Farm First Manager Supply documentation](mods/NivalisFarmSupply/README.md).
+[Farm First Manager Supply documentation](mods/NivalisFarmSupply/README.md) and
+[Boat Decor documentation](mods/NivalisBoatDecor/README.md).
 
 ## License
 

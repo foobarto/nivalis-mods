@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>NivalisBoatDecor</AssemblyName>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <!-- Use the loader's exact runtime locally, without downloading targeting packs. -->
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <Compile Include="../../shared/managed/RelativeAttachmentStore.cs" Link="RelativeAttachmentStore.cs" />
+    <Compile Include="../../shared/managed/SaveSnapshotStore.cs" Link="SaveSnapshotStore.cs" />
+    <Compile Include="../../shared/managed/ManagedApiCompatibility.cs" Link="ManagedApiCompatibility.cs" />
+    <Reference Include="$(GamePath)/dotnet/*.dll" Private="false" />
+    <Reference Include="$(GamePath)/BepInEx/core/*.dll" Private="false" />
+    <Reference Include="$(GamePath)/BepInEx/interop/*.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="RequireGame" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(GamePath)/BepInEx/interop/Assembly-CSharp.dll')"
+           Text="Pass -p:GamePath=... pointing to Nivalis after BepInEx's first launch." />
+  </Target>
+</Project>

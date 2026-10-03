@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../shared/managed/RelativeAttachmentStore.cs" Link="RelativeAttachmentStore.cs" />
+    <Compile Include="../../../shared/managed/SaveSnapshotStore.cs" Link="SaveSnapshotStore.cs" />
+  </ItemGroup>
+</Project>
