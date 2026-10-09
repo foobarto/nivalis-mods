@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0
+
+- Support game Update #4 (Steam build 25828494). 0.3.0 deactivated itself on
+  that build because the per-pass shopping list and a purchase parameter were
+  removed.
+- Follow each venue's Venue Management Settings: farm supply restocks to the
+  game's own Lean, Normal, Extra or Recent Sales target. Recent Sales uses the
+  per-meal target the manager uses, not the ingredient-level minimum.
+- Add `[Supply] MinimumShortfall` (default 1): smaller gaps are left to vendors
+  so a whole harvest is not spent on a one-item top-up.
+- Apply `Enabled`, `MinimumShortfall` and `Verbose` changes saved while the game
+  runs, at the next restock.
+- Retire `[Supply] RestockThreshold` and the copied demand rules; the in-game
+  supply target replaces them.
+- Verbose purchase traces show the venue setting, meal target, budget and the
+  target per ingredient.
+
+## 0.3.0
+
+- Follow the manager's new preemptive restocking (Steam build 25738165): also
+  supply an ingredient when venue stock plus pending deliveries is below
+  `[Supply] RestockThreshold` (default 10, observed live; 0 disables). The
+  earlier recipe-demand rule still applies, so supply never drops below 0.2.2.
+- Verbose logging now records each manager purchase per recipe (stock, pending
+  deliveries, amount bought) and the stock behind each farm demand decision.
+- Add restock threshold checks (209 total checks).
+
 ## 0.2.2
 
 - Support crops whose produce is also their planting material, including Lemons

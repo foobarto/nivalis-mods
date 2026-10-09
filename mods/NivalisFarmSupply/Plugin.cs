@@ -18,7 +18,7 @@ using Nivalis.Locale.UI;
 
 namespace NivalisFarmSupply;
 
-[BepInPlugin(Guid, "Farm First Manager Supply", "0.2.2")]
+[BepInPlugin(Guid, "Farm First Manager Supply", "0.4.0")]
 public sealed class Plugin : BasePlugin
 {
     public const string Guid = "cheeze.nivalis.farmsupply";
@@ -28,6 +28,8 @@ public sealed class Plugin : BasePlugin
     private ConfigEntry<bool> enabled = null!;
     private ConfigEntry<bool> verbose = null!;
     private ConfigEntry<bool> bestEffort = null!;
+    private ConfigEntry<int> minimumShortfall = null!;
+    private DateTime configStamp;
     private static bool supplying;
     private static bool inactive;
     private static bool supplyFaulted;
@@ -53,10 +55,17 @@ public sealed class Plugin : BasePlugin
         try
         {
             enabled = Config.Bind("Supply", "Enabled", true, "Supply managers from ripe crops in player-owned farms, then replant.");
-            verbose = Config.Bind("Debug", "Verbose", false, "Log ingredients without available farm stock or space.");
+            // [Supply] RestockThreshold (0.3.0) is retired: each venue's in-game supply
+            // target now sets the restock level. The unbound entry is left untouched.
+            minimumShortfall = Config.Bind("Supply", "MinimumShortfall", 1, new ConfigDescription(
+                "Harvest only when a venue is short at least this many of an ingredient; smaller gaps are left to the manager's vendors. "
+                + "Raise it to avoid whole harvests for small top-ups. Saving the file applies it at the next restock.",
+                new AcceptableValueRange<int>(1, 1000)));
+            verbose = Config.Bind("Debug", "Verbose", false, "Log farm demand and the manager's purchases for each recipe.");
             showReceipts = Config.Bind("Receipts", "ShowFarmSupply", true, "Add zero-cost farm-supply entries to venue finance details.");
             bestEffort = Config.Bind("Compatibility", "BestEffortAfterUpdates", true,
                 "Try regenerated bindings on unverified game builds; disable farm supply after a compatibility failure.");
+            configStamp = File.GetLastWriteTimeUtc(Config.ConfigFilePath);
             harmony = new Harmony(Guid);
             LoadCompatible(harmony);
         }
@@ -85,9 +94,10 @@ public sealed class Plugin : BasePlugin
         ManagedApiCompatibility.Validate(typeof(Plugin).Assembly);
         receiptStore = new SaveSnapshotStore(Path.Combine(Paths.ConfigPath, Guid, "receipts"));
         var method = AccessTools.DeclaredMethod(typeof(VenueAreaGhost), "TryPurchaseIngredients",
-            new[] { typeof(IRecipe), typeof(float), typeof(float) });
+            new[] { typeof(IRecipe), typeof(float) });
         if (method == null) throw new MissingMethodException("VenueAreaGhost.TryPurchaseIngredients");
-        harmony.Patch(method, prefix: new HarmonyMethod(typeof(Plugin), nameof(BeforePurchase)));
+        harmony.Patch(method, prefix: new HarmonyMethod(typeof(Plugin), nameof(BeforePurchase)),
+            postfix: new HarmonyMethod(typeof(Plugin), nameof(AfterPurchase)));
         harmony.Patch(AccessTools.DeclaredMethod(typeof(LocaleFinanceOverviewGainsAndCostsPanel), "Show"),
             postfix: new HarmonyMethod(typeof(Plugin), nameof(AfterFinanceShow)));
         harmony.Patch(AccessTools.DeclaredMethod(typeof(SerializationManager), "Save"),
@@ -97,25 +107,102 @@ public sealed class Plugin : BasePlugin
             prefix: new HarmonyMethod(typeof(Plugin), nameof(BeforeLoad)));
         afterLoad = (Il2CppSystem.Action)(Action)AfterLoadCompleted;
         SerializationManager.OnPostLoad.Add(afterLoad);
-        Log.LogInfo("Farm First Manager Supply 0.2.2 loaded. Full harvests -> venue stock, shared produce/planting items supported; replant recovery and independent delivery receipts.");
+        Log.LogInfo("Farm First Manager Supply 0.4.0 loaded. Venue supply targets; full harvests -> venue stock, shared produce/planting items supported; replant recovery and independent delivery receipts.");
     }
 
-    private static bool BeforePurchase(VenueAreaGhost __instance, IRecipe recipe)
+    private sealed class PurchaseTrace(string venue, string recipe, string setting, float barter)
     {
-        if (inactive || supplyFaulted || !Instance.enabled.Value) return true;
-        if (Instance.receiptLoad.Active) return true;
-        if (supplying) return true;
+        public readonly string Venue = venue, Recipe = recipe, Setting = setting;
+        public readonly float Barter = barter;
+        public readonly List<(ItemType Type, int Target, int Stock, int Incoming)> Inputs = new();
+    }
+
+    private static bool BeforePurchase(VenueAreaGhost __instance, IRecipe recipe,
+        float barterMultiplier, ref PurchaseTrace? __state)
+    {
+        SupplyFromFarms(__instance, recipe);
+        __state = TracePurchase(__instance, recipe, barterMultiplier);
+        return true;
+    }
+
+    // Read-only diagnostics: venue stock after farm supply, and what native
+    // purchasing added for this recipe. Shows when the manager's rule moves.
+    private static PurchaseTrace? TracePurchase(VenueAreaGhost venue, IRecipe recipe, float barter)
+    {
+        if (inactive || supplying || !Instance.verbose.Value || Instance.receiptLoad.Active) return null;
         try
         {
-            if (!__instance.PlayerOwned || !Singleton<PlayerManager>.InstanceExist() || !Singleton<GreenhouseManager>.InstanceExist()) return true;
+            if (!venue.PlayerOwned || recipe == null || venue.JointInventory == null) return null;
+            int mealTarget = MealSupplyTarget(venue, recipe);
+            var trace = new PurchaseTrace(venue.Venue.GetName(), recipe.Output.type.name,
+                $"{venue.SupplyTarget}, mealTarget={mealTarget}, budget={venue.CurrentRestockBudget}/{venue.DailyRestockBudget}", barter);
+            var incoming = Incoming(venue);
+            var seen = new HashSet<IntPtr>();
+            var inputs = recipe.Inputs;
+            for (int i = 0; i < inputs.Length; i++)
+            {
+                var type = inputs[i].DefaultItem;
+                if (type == null || !seen.Add(type.Pointer)) continue;
+                trace.Inputs.Add((type, Math.Max(venue.GetSupplyTarget(type), mealTarget), venue.JointInventory.GetItemCount(type),
+                    incoming.TryGetValue(type.Pointer, out int count) ? count : 0));
+            }
+            return trace;
+        }
+        catch (Exception error) { Instance.Log.LogWarning("Manager purchase trace unavailable. " + error.Message); return null; }
+    }
+
+    private static void AfterPurchase(VenueAreaGhost __instance, bool __result, PurchaseTrace? __state)
+    {
+        if (inactive || __state == null) return;
+        try
+        {
+            var incoming = Incoming(__instance);
+            var parts = new List<string>();
+            foreach (var input in __state.Inputs)
+            {
+                int stock = __instance.JointInventory.GetItemCount(input.Type);
+                int pending = incoming.TryGetValue(input.Type.Pointer, out int count) ? count : 0;
+                parts.Add($"{input.Type.name}[target={input.Target}, stock={input.Stock}, incoming={input.Incoming}, "
+                    + $"bought={pending - input.Incoming + stock - input.Stock}]");
+            }
+            Instance.Log.LogInfo($"Manager purchase: venue={__state.Venue}, recipe={__state.Recipe}, "
+                + $"supply={__state.Setting}, barter={__state.Barter}, result={__result}: {string.Join("; ", parts)}");
+        }
+        catch (Exception error) { Instance.Log.LogWarning("Manager purchase trace failed. " + error.Message); }
+    }
+
+    // Apply settings saved while the game runs, before the next restock decision.
+    private void ReloadConfigIfChanged()
+    {
+        try
+        {
+            var stamp = File.GetLastWriteTimeUtc(Config.ConfigFilePath);
+            if (stamp == configStamp) return;
+            Config.Reload();
+            // Reloading can rewrite the file; take the stamp afterwards so one save
+            // produces one reload.
+            configStamp = File.GetLastWriteTimeUtc(Config.ConfigFilePath);
+            Log.LogInfo($"Settings reloaded: Enabled={enabled.Value}, MinimumShortfall={minimumShortfall.Value}, Verbose={verbose.Value}.");
+        }
+        catch (Exception error) { Log.LogWarning("Settings reload failed; previous values stay in effect. " + error.Message); }
+    }
+
+    private static void SupplyFromFarms(VenueAreaGhost venue, IRecipe recipe)
+    {
+        if (!inactive) Instance.ReloadConfigIfChanged();
+        if (inactive || supplyFaulted || !Instance.enabled.Value) return;
+        if (Instance.receiptLoad.Active) return;
+        if (supplying) return;
+        try
+        {
+            if (!venue.PlayerOwned || !Singleton<PlayerManager>.InstanceExist() || !Singleton<GreenhouseManager>.InstanceExist()) return;
             if (!hookObserved)
             {
                 hookObserved = true;
                 Instance.Log.LogInfo("Player venue purchasing hook invoked.");
             }
             supplying = true;
-            Instance.Supply(__instance, recipe);
-            return true;
+            Instance.Supply(venue, recipe);
         }
         catch (Exception error)
         {
@@ -125,7 +212,6 @@ public sealed class Plugin : BasePlugin
                 inactive = true;
             Instance.Log.LogError("Farm supply disabled after an unexpected error. Normal vendor purchasing continues. "
                 + (inactive ? "Compatibility callbacks are inactive. " : "Completed delivery receipts remain available. ") + error);
-            return true;
         }
         finally { supplying = false; }
     }
@@ -139,34 +225,28 @@ public sealed class Plugin : BasePlugin
         if (player == null || recipe == null || venue.JointInventory == null) return;
         var inventory = player.Inventory;
         var playerItems = inventory.Items;
-        var sales = new List<ManagerDemand.Sale>();
-        var receipts = venue.Receipts.ReceiptsLookup.GetReceiptsOfType<RestaurantReceipt>();
-        for (int i = 0; i < receipts.Cast<Il2CppSystem.Collections.Generic.IReadOnlyCollection<RestaurantReceipt>>().Count; i++)
-        {
-            var receipt = receipts[i];
-            sales.Add(new ManagerDemand.Sale(receipt.Time.TotalHours, receipt.Count,
-                Same(receipt.Meal, recipe.Output.type)));
-        }
-        int servings = ManagerDemand.Servings(TimeOfDayManager.TotalHours, sales);
-        var inputs = new Dictionary<IntPtr, (ItemType Type, int Count)>();
+        var inputs = new Dictionary<IntPtr, ItemType>();
         var recipeInputs = recipe.Inputs;
         for (int i = 0; i < recipeInputs.Length; i++)
         {
             var type = recipeInputs[i].DefaultItem;
-            if (type == null) continue;
-            inputs.TryGetValue(type.Pointer, out var prior);
-            inputs[type.Pointer] = (type, checked(prior.Count + 1));
+            if (type != null) inputs[type.Pointer] = type;
         }
-        // Native purchasing already counts active queued deliveries. Include waiting
-        // and delayed deliveries too so farm supply does not duplicate these items.
+        // The venue's supply target (Lean, Normal, Extra or Recent Sales) is the
+        // manager's own restock level. Include waiting and delayed deliveries so
+        // farm supply does not duplicate items already on their way.
         var incoming = Incoming(venue);
-        foreach (var entry in inputs.Values)
+        int mealTarget = MealSupplyTarget(venue, recipe);
+        foreach (var type in inputs.Values)
         {
-            int missing = ManagerDemand.Missing(entry.Count, servings,
-                venue.JointInventory.GetItemCount(entry.Type),
-                incoming.TryGetValue(entry.Type.Pointer, out int count) ? count : 0);
-            if (verbose.Value) Log.LogInfo($"Farm demand: {entry.Type.name}, missing={missing}, servings={servings}.");
-            if (missing == 0) continue;
+            int target = Math.Max(venue.GetSupplyTarget(type), mealTarget);
+            int stored = venue.JointInventory.GetItemCount(type);
+            int pending = incoming.TryGetValue(type.Pointer, out int count) ? count : 0;
+            int missing = ManagerDemand.Shortfall(target, stored, pending);
+            bool harvest = ManagerDemand.ShouldHarvest(missing, minimumShortfall.Value);
+            if (verbose.Value) Log.LogInfo($"Farm demand: {type.name}, missing={missing}, target={target}, stock={stored}, incoming={pending}"
+                + (missing > 0 && !harvest ? $", below minimum shortfall {minimumShortfall.Value}; left to vendors." : "."));
+            if (!harvest) continue;
             var greenhouseManager = Singleton<GreenhouseManager>.Instance;
             var farms = greenhouseManager.Greenhouses;
             bool skipIngredient = false;
@@ -179,7 +259,7 @@ public sealed class Plugin : BasePlugin
                 for (int m = 0; m < area.Modules.Count && missing > 0; m++)
                 {
                     var module = area.Modules[m].Value;
-                    if (module == null || !module.ReadyForHarvest || !Same(module.PlantType, entry.Type)) continue;
+                    if (module == null || !module.ReadyForHarvest || !Same(module.PlantType, type)) continue;
                     string moduleId = module.Id;
                     if (string.IsNullOrWhiteSpace(moduleId)) throw new InvalidOperationException("Farm unit identity is unavailable.");
                     if (skippedModules.Contains(moduleId)) continue;
@@ -379,6 +459,15 @@ public sealed class Plugin : BasePlugin
         }
     }
 
+    // Under Recent Sales the manager restocks each recipe's ingredients to that
+    // meal's recent sales (minimum 2); the game counts sales by meal, so an
+    // ingredient alone only yields the minimum. Fixed settings give one value.
+    private static int MealSupplyTarget(VenueAreaGhost venue, IRecipe recipe)
+    {
+        var meal = recipe.Output?.type;
+        return meal == null ? 0 : venue.GetSupplyTarget(meal);
+    }
+
     private static Dictionary<IntPtr, int> Incoming(VenueAreaGhost venue)
     {
         var result = new Dictionary<IntPtr, int>();
@@ -409,8 +498,8 @@ public sealed class Plugin : BasePlugin
             for (int i = 0; i < queue.QueueWaiting.Count; i++) AddTask(queue.QueueWaiting[i]);
             for (int i = 0; i < queue.DelayedQueue.Count; i++) AddTask(queue.DelayedQueue[i].Task);
         }
-        // This dictionary is populated during BuyIngredients, across recipe calls.
-        AddItems(venue.shoppingList);
+        // Update #4 removed the per-pass shopping list; items bought earlier in the
+        // same BuyIngredients pass are visible only once queued as a delivery task.
         return result;
     }
 
